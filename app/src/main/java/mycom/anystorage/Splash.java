@@ -28,10 +28,10 @@ public class Splash extends Activity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.splash_layout);
         init();
-        if(userId != null)  Log.e("user ID : ", userId);
-        else                Log.e("user ID : ", "NULL");
-        if(userPwd != null) Log.e("userPASS : ", userPwd);
-        else                Log.e("userPASS : ", "NULL");
+//        if(userId != null)  Log.e("user ID : ", userId);
+//        else                Log.e("user ID : ", "NULL");
+//        if(userPwd != null) Log.e("userPASS : ", userPwd);
+//        else                Log.e("userPASS : ", "NULL");
 
         device.connect(Splash.this, "http://www.devkts.kro.kr:9900", userId, userPwd);
 //        new Handler().postDelayed(new Runnable() {

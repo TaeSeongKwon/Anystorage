@@ -3,6 +3,7 @@ package mycom.anystorage;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.os.Build;
 import android.util.Log;
 
 import com.github.nkzawa.emitter.Emitter;
@@ -31,6 +32,7 @@ public class ClientWebSocket {
     private ClientWebSocket() {}
     private boolean isSuccess;
     private boolean flag = true;
+    private boolean device_ack = true;
 
     public boolean isConnect(){ return device.connected(); }
     public boolean connect(Activity activity, String url, String userId, String userPwd){
@@ -42,6 +44,7 @@ public class ClientWebSocket {
             device = IO.socket(url);
             device.connect();
             init();
+            new AutoLogin().start();
             return true;
         } catch (URISyntaxException e) {
             Log.e("Web Socket Error : ", e.toString());
@@ -65,6 +68,7 @@ public class ClientWebSocket {
             device.emit("device_login", loginData);
             flag = true;
 
+            // Receive Ready
             while(flag) {
                 try{
                     Thread.sleep(500);
@@ -78,9 +82,11 @@ public class ClientWebSocket {
                 if(manager.setString("userId", this.userId))    Log.e("Save ID : ", "true");
                 else                                            Log.e("Save ID : ", "false");
 
-//                if(manager.setString("userPwd", this.userPwd))  Log.e("Save Pwd : ", "true");
-//                else                                            Log.e("Save Pwd : ", "false");
+                if(manager.setString("userPwd", this.userPwd))  Log.e("Save Pwd : ", "true");
+                else                                            Log.e("Save Pwd : ", "false");
 
+                // Send Power On Message to Web Browser
+                sendPowerOnMsg();
                 return true;
             }else return false;
         } catch (JSONException e) {
@@ -88,58 +94,113 @@ public class ClientWebSocket {
             return false;
         }
     }
-    private void registerEvent(){
-        device.on("type", new Emitter.Listener() {
+
+
+    // Send Power On Message to Web Browser Method
+    private void sendPowerOnMsg(){
+        JSONObject res = new JSONObject();
+        try {
+            res.put("device_name", Build.DEVICE);
+            res.put("device_model", Build.MODEL);
+            res.put("device_serial", (String)Build.class.getField("SERIAL").get(null));
+            device.emit("res_on_device", res);
+        } catch (JSONException e) {
+            Log.e("req_on_device Error : ", e.toString());
+        }
+        catch (NoSuchFieldException e) {
+            Log.e("req_on_device Error : ", e.toString());
+//            e.printStackTrace();
+        } catch (IllegalAccessException e) {
+            Log.e("req_on_device Error : ", e.toString());
+//            e.printStackTrace();
+        }
+    }
+
+    // Send Power Off Message to Web Browser Method
+    private void sendPowerOffMsg(){
+        JSONObject res = new JSONObject();
+        try {
+            res.put("device_name", Build.DEVICE);
+            res.put("device_model", Build.MODEL);
+            device.emit("res_off_device", res);
+        } catch (JSONException e) {
+            Log.e("req_on_device Error : ", e.toString());
+        }
+    }
+
+    private void init(){
+        // Initialize Socket
+        device.on(Socket.EVENT_CONNECT, new Emitter.Listener() {
             @Override
             public void call(Object... args) {
-                JSONObject obj = new JSONObject();
-                device.emit("device", obj.toString());
+                // call register event
+                device.on("type", new Emitter.Listener() {
+                    @Override
+                    public void call(Object... args) {
+                        JSONObject obj = new JSONObject();
+                        device.emit("device", obj.toString());
+                    }
+                });
+                device.on("req_on_device", new Emitter.Listener() {
+                    @Override
+                    public void call(Object... args) {
+                        // Send Power On Message to Web Browser
+                        sendPowerOnMsg();
+                    }
+                });
+                device.on("login_response", new Emitter.Listener() {
+                    @Override
+                    public void call(Object... args) {
+                        try {
+//                    JSONObject obj = new JSONObject(args[0].toString());
+                            JSONObject obj = (JSONObject) args[0];
+                            Log.e("Data ::::", obj.toString());
+                            isSuccess = obj.getBoolean("isSuccess");
+
+                        } catch (JSONException e) {
+                            Log.e("Login Error : ", e.toString());
+                            isSuccess = false;
+                        }
+                        flag = false;
+                    }
+                });
             }
         });
 
-        device.on("login_response", new Emitter.Listener() {
+
+        device.on(Socket.EVENT_DISCONNECT, new Emitter.Listener() {
             @Override
             public void call(Object... args) {
-                try {
-//                    JSONObject obj = new JSONObject(args[0].toString());
-                    JSONObject obj = (JSONObject) args[0];
-                    Log.e("Data ::::", obj.toString());
-                    isSuccess = obj.getBoolean("isSuccess");
-
-                } catch (JSONException e) {
-                    Log.e("Login Error : ", e.toString());
-                    isSuccess = false;
-                }
-                flag = false;
+                sendPowerOffMsg();
             }
         });
     }
 
-
-    private void init(){
-        device.on(Socket.EVENT_CONNECT, new Emitter.Listener() {
-            @Override
-            public void call(Object... args) {
-                Intent intent;
-
-                if ((userId != null && userPwd != null)) {
-                    Log.e("userID : ", userId);
-                    Log.e("userPASS : ", userPwd);
-                    intent = new Intent(activity, AnystroageMain.class);
-                } else {
-                    intent = new Intent(activity, LoginActivity.class);
+    class AutoLogin extends Thread{
+        public void run(){
+            Intent intent;
+            while(true) {
+                if (device.connected()) {
+                    // Check SharedPreference UserInfo
+                    if ((userId != null && userPwd != null)) {
+                        Log.e("Start Login!", "4");
+                        // Auto Login
+                        if (login()) intent = new Intent(activity, AnystroageMain.class);
+                        else intent = new Intent(activity, LoginActivity.class);
+//                        intent = new Intent(activity, LoginActivity.class);
+                    } else {
+                        intent = new Intent(activity, LoginActivity.class);
+                    }
+                    // Change Activity
+                    activity.startActivity(intent);
+                    activity.finish();
+                    break;
                 }
-
-                registerEvent();
-                activity.startActivity(intent);
-                activity.finish();
-
+                try{
+                    Thread.sleep(500);
+                }catch(Exception e){}
             }
-        }).on(Socket.EVENT_DISCONNECT, new Emitter.Listener() {
-            @Override
-            public void call(Object... args) {
 
-            }
-        });
+        }
     }
 }
