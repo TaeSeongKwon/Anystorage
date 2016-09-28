@@ -1,18 +1,8 @@
 package mycom.anystorage;
 
 import android.app.Activity;
-import android.content.Intent;
-import android.content.SharedPreferences;
-import android.os.Handler;
-import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
-import android.widget.Toast;
-
-import com.github.nkzawa.emitter.Emitter;
-import com.github.nkzawa.socketio.client.IO;
-
-import org.json.JSONObject;
 
 public class Splash extends Activity {
     // Customer Singletone Class
@@ -28,7 +18,7 @@ public class Splash extends Activity {
         device = ClientWebSocket.getInstance();
         userInfo = AccountManager.getInstance();
         userInfo.init(getSharedPreferences("setting",0 ));
-
+        //asdfasdf
         userId = userInfo.getString("userId");
         userPwd = userInfo.getString("userPwd");
 
