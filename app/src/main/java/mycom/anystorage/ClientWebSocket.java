@@ -4,6 +4,9 @@ package mycom.anystorage;
 import android.app.Activity;
 import android.content.Intent;
 import android.os.Build;
+import android.os.Environment;
+import android.text.format.DateFormat;
+import android.text.format.DateUtils;
 import android.util.Log;
 
 import com.github.nkzawa.emitter.Emitter;
@@ -11,10 +14,15 @@ import com.github.nkzawa.socketio.client.Ack;
 import com.github.nkzawa.socketio.client.IO;
 import com.github.nkzawa.socketio.client.Socket;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.File;
 import java.net.URISyntaxException;
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
+import java.util.Date;
 
 /**
  * Created by KTS on 2016-09-26.
@@ -33,7 +41,7 @@ public class ClientWebSocket {
     private boolean isSuccess;
     private boolean flag = true;
     private boolean device_ack = true;
-
+    private long cnt;
     public boolean isConnect(){ return device.connected(); }
     public boolean connect(Activity activity, String url, String userId, String userPwd){
         this.activity = activity;
@@ -84,6 +92,20 @@ public class ClientWebSocket {
 
                 if(manager.setString("userPwd", this.userPwd))  Log.e("Save Pwd : ", "true");
                 else                                            Log.e("Save Pwd : ", "false");
+
+                try {
+                    String device_serial = (String) Build.class.getField("SERIAL").get(null);
+                    device.on(userId + device_serial, new Emitter.Listener() {
+                        @Override
+                        public void call(Object... args) {
+                            device.emit("ack_connect_device", args[0]);
+                        }
+                    });
+                } catch (NoSuchFieldException e) {
+                    e.printStackTrace();
+                } catch (IllegalAccessException e) {
+                    e.printStackTrace();
+                }
 
                 // Send Power On Message to Web Browser
                 sendPowerOnMsg();
@@ -164,9 +186,20 @@ public class ClientWebSocket {
                         flag = false;
                     }
                 });
+
             }
         });
-
+        device.on("req_file_tree", new Emitter.Listener() {
+            @Override
+            public void call(Object... args) {
+                Log.e("request_file tree", " ");
+                File rootFile = Environment.getExternalStorageDirectory();
+                JSONArray tree = getFileTree(rootFile);
+                Log.e("create file tree", "   ");
+                device.emit("res_file_tree", tree.toString());
+                Log.e("send file tree", "   ");
+            }
+        });
 
         device.on(Socket.EVENT_DISCONNECT, new Emitter.Listener() {
             @Override
@@ -174,6 +207,90 @@ public class ClientWebSocket {
                 sendPowerOffMsg();
             }
         });
+    }
+    private JSONArray getFileTree(File root){
+        this.cnt = 0;
+        return createFileTree(root);
+    }
+    private JSONArray createFileTree(File root){
+        File[] childList = root.listFiles();
+        JSONArray list = new JSONArray();
+        SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd h:mm a");
+        Calendar calendar = Calendar.getInstance();
+        JSONArray data;
+        JSONObject obj;
+        File node;
+        Long timelong, size;
+
+        int lastPoint, nameLength;
+        String executeType, type;
+        for(int idx = 0; idx < childList.length; idx++){
+            node = childList[idx];
+            cnt++;
+            try {
+                calendar.setTime(new Date(node.lastModified()));
+
+                data = new JSONArray();
+                obj = new JSONObject();
+
+                obj.put("id", "file_"+cnt);
+//                Log.e("id : ", ""+node.lastModified());
+                obj.put("value", node.getName());
+                obj.put("open", false);
+                obj.put("date",node.lastModified()/1000);
+
+                if (node.isFile()) {
+                    lastPoint = node.getName().lastIndexOf(".");
+                    nameLength = node.getName().length();
+                    size = node.length();
+                    obj.put("size", size);
+
+                    if(lastPoint != -1){
+                        executeType = node.getName().substring(lastPoint+1, nameLength);
+                        executeType = executeType.toLowerCase();
+                        Log.e("executeType", executeType);
+                        if(executeType.equals("doc") || executeType.equals("docx") || executeType.equals("docm")){
+                            type = "Document";
+                        }else if(executeType.equals("dot") || executeType.equals("dotx") || executeType.equals("dotm")){
+                            type = "Document";
+                        }else if(executeType.equals("ppt") || executeType.equals("pptx") || executeType.equals("pptm")){
+                            type = "pp";
+                        }else if(executeType.equals("pot") || executeType.equals("potx") || executeType.equals("potm")){
+                            type = "pp";
+                        }else if(executeType.equals("pps") || executeType.equals("ppsx") || executeType.equals("ppsm")){
+                            type = "pp";
+                        }else if(executeType.equals("xls") || executeType.equals("xlsx") || executeType.equals("xlsm")){
+                            type = "excel";
+                        }else if(executeType.equals("zip") || executeType.equals("tar") || executeType.equals("rar")){
+                            type = "archive";
+                        }else if(executeType.equals("jar") || executeType.equals("alz") || executeType.equals("xlsm")){
+                            type = "archive";
+                        }else if(executeType.equals("jpg") || executeType.equals("jpeg") || executeType.equals("gif")){
+                            type = "image";
+                        }else if(executeType.equals("png") || executeType.equals("psd") || executeType.equals("pdd")){
+                            type = "image";
+                        }else if(executeType.equals("tif") || executeType.equals("raw") || executeType.equals("svg")){
+                            type = "image";
+                        }else{
+                            type = executeType;
+                        }
+                    }else {
+                        type = "file";
+                    }
+                    obj.put("type", type);
+//                id: "files", value: "Files", open: true,  type: "folder", date:  new Date(2014,2,10,16,10), data:
+                } else if (node.isDirectory()) {
+                    type = "forder";
+                    data = createFileTree(node);
+                    obj.put("type", type);
+                    obj.put("data", data);
+                }
+                list.put(obj);
+            } catch (JSONException e) {
+                e.printStackTrace();
+            }
+        }
+        return list;
     }
 
     class AutoLogin extends Thread{
