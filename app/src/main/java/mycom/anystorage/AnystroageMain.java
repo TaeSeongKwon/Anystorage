@@ -6,6 +6,9 @@ import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 
 import java.io.File;
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
+import java.util.Date;
 
 public class AnystroageMain extends AppCompatActivity {
     private String rootPath;
@@ -25,8 +28,14 @@ public class AnystroageMain extends AppCompatActivity {
         dataPath = dataFile.getAbsolutePath();
         Log.e("root Path : ", rootPath);
         Log.e("data Path : ", dataPath);
-        String fileList[] = rootFile.list();
-        for(int idx = 0; idx< fileList.length; idx++)
-            Log.e("file : ", fileList[idx]);
+        File fileList[] = rootFile.listFiles();
+        File file = new File(rootPath+"/"+fileList[0]);
+        Log.e("file Path : ", file.getAbsolutePath());
+//        SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd h:mm a");
+//        for(int idx = 0; idx< fileList.length; idx++) {
+////            Calendar calendar = Calendar.getInstance();
+////            calendar.setTime();
+//            Log.e("file : ", format.format(new Date(fileList[idx].lastModified())));
+//        }
     }
 }
