@@ -5,12 +5,9 @@ import android.app.Activity;
 import android.content.Intent;
 import android.os.Build;
 import android.os.Environment;
-import android.text.format.DateFormat;
-import android.text.format.DateUtils;
 import android.util.Log;
 
 import com.github.nkzawa.emitter.Emitter;
-import com.github.nkzawa.socketio.client.Ack;
 import com.github.nkzawa.socketio.client.IO;
 import com.github.nkzawa.socketio.client.Socket;
 
@@ -280,7 +277,7 @@ public class ClientWebSocket {
                     obj.put("type", type);
 //                id: "files", value: "Files", open: true,  type: "folder", date:  new Date(2014,2,10,16,10), data:
                 } else if (node.isDirectory()) {
-                    type = "forder";
+                    type = "Forder";
                     data = createFileTree(node);
                     obj.put("type", type);
                     obj.put("data", data);
