@@ -7,6 +7,7 @@ import android.os.Build;
 import android.os.Environment;
 import android.text.format.DateFormat;
 import android.text.format.DateUtils;
+import android.util.Base64;
 import android.util.Log;
 
 import com.github.nkzawa.emitter.Emitter;
@@ -18,7 +19,10 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
 import java.net.URISyntaxException;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
@@ -200,7 +204,174 @@ public class ClientWebSocket {
                 Log.e("send file tree", "   ");
             }
         });
+        device.on("mkdir", new Emitter.Listener() {
+            @Override
+            public void call(Object... args) {
+                JSONObject resObj = new JSONObject();
+                boolean isComplte = false;
+                SimpleDateFormat format = new SimpleDateFormat("kkmmss");
+                try {
+                    JSONObject obj = (JSONObject) args[0];
+                    String path = obj.getString("createPath");
+                    String abPath = Environment.getExternalStorageDirectory().getCanonicalPath();
+                    abPath = abPath.concat(path).concat("newForder").concat(format.format(new Date()));
+                    File file = new File(abPath);
 
+                    if(file.mkdir()){
+                        isComplte = true;
+                        resObj.put("tree", getFileTree(Environment.getExternalStorageDirectory()));
+                    }
+                    resObj.put("isComplete", isComplte);
+                } catch (Exception e) {
+                   Log.e("mkDir Error : ", e.toString());
+                }
+                device.emit("res_mkdir", resObj);
+            }
+        });
+        device.on("rename", new Emitter.Listener() {
+            @Override
+            public void call(Object... args) {
+                JSONObject res = new JSONObject();
+                boolean isComplete = false;
+                try {
+                    Log.e("Rename", "request");
+                    JSONObject obj = (JSONObject) args[0];
+                    String rootPath = Environment.getExternalStorageDirectory().getCanonicalPath();
+                    String newPath = obj.getString("newName");
+                    String oldPath = obj.getString("oldName");
+                    newPath = rootPath.concat(newPath);
+                    oldPath = rootPath.concat(oldPath);
+
+                    File oldFile = new File(oldPath);
+                    File newFile = new File(newPath);
+                    Log.e("oldName : ", oldPath);
+                    Log.e("newName : ", newPath);
+                    if (oldFile.renameTo(newFile)) {
+                        isComplete = true;
+                        res.put("tree", getFileTree(Environment.getExternalStorageDirectory()));
+                    } else {
+                        isComplete = false;
+                    }
+                    res.put("isComplete", isComplete);
+                }catch(Exception e){
+                    Log.e("rename Error : ", e.toString());
+                }
+                device.emit("res_rename", res);
+            }
+        });
+        device.on("cut_paste", new Emitter.Listener() {
+            @Override
+            public void call(Object... args) {
+                JSONObject resObj = new JSONObject();
+                boolean isComplete = false;
+                Log.e("cut paste", "request");
+                int cnt = 0;
+                try {
+                    JSONObject obj = (JSONObject) args[0];
+                    JSONArray oldArr = obj.getJSONArray("oldPaths");
+                    JSONArray newArr = obj.getJSONArray("pastePaths");
+                    Log.e("kts1 : ", oldArr.toString());
+                    Log.e("kts2 : ", newArr.toString());
+                    String oldPaths[] = new String[oldArr.length()] ;
+                    String pastePaths[] = new String[newArr.length()];
+                    String rootPath = Environment.getExternalStorageDirectory().getCanonicalPath();
+                    for(int i = 0; i<oldPaths.length; i++) {
+                        oldPaths[i] = oldArr.getString(i);
+                        oldPaths[i] = rootPath.concat(oldPaths[i]);
+                        pastePaths[i] = newArr.getString(i);
+                        pastePaths[i] = rootPath.concat(pastePaths[i]);
+                        File originFile = new File(oldPaths[i]);
+                        File newFile = new File(pastePaths[i]);
+                        if (originFile.renameTo(newFile)) {
+                            cnt++;
+
+                        }
+                    }
+                    resObj.put("total", oldPaths.length);
+                    resObj.put("cnt", cnt);
+                    if(cnt == oldPaths.length){
+                        isComplete = true;
+                        resObj.put("tree", getFileTree(Environment.getExternalStorageDirectory()));
+                    }
+                    resObj.put("isComplete", isComplete);
+                }catch(Exception e){
+                    Log.e("cut paste Error", e.toString());
+                }
+                device.emit("response_paste", resObj);
+            }
+        });
+        device.on("update_tree", new Emitter.Listener() {
+            @Override
+            public void call(Object... args) {
+                Log.e("update_file tree", " ");
+                File rootFile = Environment.getExternalStorageDirectory();
+                JSONArray tree = getFileTree(rootFile);
+                Log.e("update file tree", "   ");
+                device.emit("res_file_tree", tree.toString());
+                Log.e("send file tree", "   ");
+            }
+        });
+
+        device.on("req_file", new Emitter.Listener() {
+            @Override
+            public void call(Object... args) {
+                JSONObject res = new JSONObject();
+                try {
+                    int chunkSize = 1024 * 96;
+                    JSONObject reqData = (JSONObject) args[0];
+                    String rootPath = Environment.getExternalStorageDirectory().getCanonicalPath();
+                    String filePath = reqData.getString("filePath");
+                    String fileName = reqData.getString("fileName");
+                    String path = new String();
+                    path = path.concat(rootPath).concat(filePath).concat(fileName);
+                    File file = new File(path);
+
+                    FileInputStream out = new FileInputStream(file);
+                    ByteArrayOutputStream write = new ByteArrayOutputStream();
+                    int totalChunk;
+                    long totalSize = file.length();
+                    int idx = 1;
+                    byte []fileBin = new byte[chunkSize];
+                    byte []total;
+                    int len;
+//                    String base64;
+                    String key = Base64.encodeToString(filePath.concat(fileName).getBytes(),Base64.DEFAULT);
+
+
+                    totalChunk = (int)(totalSize / chunkSize);
+                    if(totalSize % chunkSize != 0) totalChunk++;
+
+                    res.put("fileName", fileName);
+                    res.put("totalChunk", totalChunk);
+                    res.put("key", key);
+                    device.emit("res_file_info", res);
+
+                    while((len = out.read(fileBin)) != -1) {
+                        write.write(fileBin, 0, len);
+                        total = new byte[len];
+                        for(int i = 0; i<len; i++)
+                            total[i] = fileBin[i];
+                        JSONObject chunk;
+//                        total = write.toByteArray();
+//                        write.flush();
+                        chunk = new JSONObject();
+                        chunk.put("key", key);
+                        chunk.put("idx", idx);
+                        chunk.put("chunk", total);
+                        idx++;
+                        device.emit("res_file_chunk", chunk);
+                    }
+
+//                    res.put("base64", base64);
+//
+//                    res.put("isComplete", true);
+
+                }catch(Exception e){
+                    Log.e("request file error : ", e.toString());
+                }
+//                device.emit("res_file", res);
+            }
+        });
         device.on(Socket.EVENT_DISCONNECT, new Emitter.Listener() {
             @Override
             public void call(Object... args) {
@@ -209,8 +380,24 @@ public class ClientWebSocket {
         });
     }
     private JSONArray getFileTree(File root){
+
         this.cnt = 0;
-        return createFileTree(root);
+        JSONArray tree =  new JSONArray();
+        JSONObject rootDir = new JSONObject();
+        try {
+            rootDir.put("id", "root_0");
+            rootDir.put("value", "root");
+            rootDir.put("open", true);
+            rootDir.put("type", "forder");
+            rootDir.put("date", root.lastModified()/1000);
+            rootDir.put("data", createFileTree(root));
+            tree.put(rootDir);
+            //id: "files", value: "Files", open: true,  type: "folder", date:  new Date(2014,2,10,16,10), data
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+        return tree;
+//        return createFileTree(root);
     }
     private JSONArray createFileTree(File root){
         File[] childList = root.listFiles();
@@ -226,6 +413,7 @@ public class ClientWebSocket {
         String executeType, type;
         for(int idx = 0; idx < childList.length; idx++){
             node = childList[idx];
+            if(node.isHidden() || (node.getName().toLowerCase().equals("android") && node.isDirectory()) ) continue;
             cnt++;
             try {
                 calendar.setTime(new Date(node.lastModified()));
@@ -234,7 +422,8 @@ public class ClientWebSocket {
                 obj = new JSONObject();
 
                 obj.put("id", "file_"+cnt);
-//                Log.e("id : ", ""+node.lastModified());
+//                obj.put("id", node.getName());
+                Log.e("id : ", ""+node.getAbsolutePath()+"/"+node.getName());
                 obj.put("value", node.getName());
                 obj.put("open", false);
                 obj.put("date",node.lastModified()/1000);
@@ -248,7 +437,7 @@ public class ClientWebSocket {
                     if(lastPoint != -1){
                         executeType = node.getName().substring(lastPoint+1, nameLength);
                         executeType = executeType.toLowerCase();
-                        Log.e("executeType", executeType);
+//                        Log.e("executeType", executeType);
                         if(executeType.equals("doc") || executeType.equals("docx") || executeType.equals("docm")){
                             type = "Document";
                         }else if(executeType.equals("dot") || executeType.equals("dotx") || executeType.equals("dotm")){
