@@ -345,22 +345,31 @@ public class ClientWebSocket {
                     res.put("totalChunk", totalChunk);
                     res.put("key", key);
                     device.emit("res_file_info", res);
-
                     while((len = out.read(fileBin)) != -1) {
                         write.write(fileBin, 0, len);
-                        total = new byte[len];
-                        for(int i = 0; i<len; i++)
-                            total[i] = fileBin[i];
-                        JSONObject chunk;
-//                        total = write.toByteArray();
-//                        write.flush();
-                        chunk = new JSONObject();
-                        chunk.put("key", key);
-                        chunk.put("idx", idx);
-                        chunk.put("chunk", total);
-                        idx++;
-                        device.emit("res_file_chunk", chunk);
                     }
+                    total = write.toByteArray();
+                    String base64 = Base64.encodeToString(total, Base64.DEFAULT);
+                    JSONObject streamObj = new JSONObject();
+                    streamObj.put("fileName", fileName);
+                    streamObj.put("buffered", total);
+                    device.emit("res_file_stream", streamObj);
+
+//                    while((len = out.read(fileBin)) != -1) {
+//                        write.write(fileBin, 0, len);
+//                        total = new byte[len];
+//                        for(int i = 0; i<len; i++)
+//                            total[i] = fileBin[i];
+//                        JSONObject chunk;
+////                        total = write.toByteArray();
+////                        write.flush();
+//                        chunk = new JSONObject();
+//                        chunk.put("key", key);
+//                        chunk.put("idx", idx);
+//                        chunk.put("chunk", total);
+//                        idx++;
+//                        device.emit("res_file_chunk", chunk);
+//                    }
 
 //                    res.put("base64", base64);
 //
