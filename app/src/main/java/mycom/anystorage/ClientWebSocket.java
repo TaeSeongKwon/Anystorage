@@ -223,7 +223,7 @@ public class ClientWebSocket {
                     }
                     resObj.put("isComplete", isComplte);
                 } catch (Exception e) {
-                   Log.e("mkDir Error : ", e.toString());
+                    Log.e("mkDir Error : ", e.toString());
                 }
                 device.emit("res_mkdir", resObj);
             }
