@@ -1,8 +1,9 @@
 package mycom.anystorage;
 
+import android.Manifest;
 import android.app.Activity;
 import android.os.Bundle;
-import android.util.Log;
+import android.support.v4.app.ActivityCompat;
 
 public class Splash extends Activity {
     // Customer Singletone Class
@@ -15,9 +16,11 @@ public class Splash extends Activity {
 
     private void init(){
         // This is Singletone DesignPattern -> Reference to ClientWebSocket.java
+
         device = ClientWebSocket.getInstance();
         userInfo = AccountManager.getInstance();
         userInfo.init(getSharedPreferences("setting",0 ));
+
         //asdfasdf
         userId = userInfo.getString("userId");
         userPwd = userInfo.getString("userPwd");

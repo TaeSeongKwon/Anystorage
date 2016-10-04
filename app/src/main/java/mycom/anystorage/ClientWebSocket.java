@@ -5,13 +5,10 @@ import android.app.Activity;
 import android.content.Intent;
 import android.os.Build;
 import android.os.Environment;
-import android.text.format.DateFormat;
-import android.text.format.DateUtils;
 import android.util.Base64;
 import android.util.Log;
 
 import com.github.nkzawa.emitter.Emitter;
-import com.github.nkzawa.socketio.client.Ack;
 import com.github.nkzawa.socketio.client.IO;
 import com.github.nkzawa.socketio.client.Socket;
 
@@ -22,7 +19,6 @@ import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.IOException;
 import java.net.URISyntaxException;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
@@ -198,6 +194,8 @@ public class ClientWebSocket {
             public void call(Object... args) {
                 Log.e("request_file tree", " ");
                 File rootFile = Environment.getExternalStorageDirectory();
+//                Log.e("rootFile", rootFile.l)
+
                 JSONArray tree = getFileTree(rootFile);
                 Log.e("create file tree", "   ");
                 device.emit("res_file_tree", tree.toString());
@@ -322,6 +320,8 @@ public class ClientWebSocket {
                     String rootPath = Environment.getExternalStorageDirectory().getCanonicalPath();
                     String filePath = reqData.getString("filePath");
                     String fileName = reqData.getString("fileName");
+                    String client_id = reqData.getString("client_id");
+
                     String path = new String();
                     path = path.concat(rootPath).concat(filePath).concat(fileName);
                     File file = new File(path);
@@ -343,42 +343,57 @@ public class ClientWebSocket {
 
                     res.put("fileName", fileName);
                     res.put("totalChunk", totalChunk);
-                    res.put("key", key);
+                    res.put("key", client_id);
                     device.emit("res_file_info", res);
-                    while((len = out.read(fileBin)) != -1) {
-                        write.write(fileBin, 0, len);
-                    }
-                    total = write.toByteArray();
-                    String base64 = Base64.encodeToString(total, Base64.DEFAULT);
-                    JSONObject streamObj = new JSONObject();
-                    streamObj.put("fileName", fileName);
-                    streamObj.put("buffered", total);
-                    device.emit("res_file_stream", streamObj);
-
 //                    while((len = out.read(fileBin)) != -1) {
 //                        write.write(fileBin, 0, len);
-//                        total = new byte[len];
-//                        for(int i = 0; i<len; i++)
-//                            total[i] = fileBin[i];
-//                        JSONObject chunk;
-////                        total = write.toByteArray();
-////                        write.flush();
-//                        chunk = new JSONObject();
-//                        chunk.put("key", key);
-//                        chunk.put("idx", idx);
-//                        chunk.put("chunk", total);
-//                        idx++;
-//                        device.emit("res_file_chunk", chunk);
 //                    }
+//                    total = write.toByteArray();
+//                    String base64 = Base64.encodeToString(total, Base64.DEFAULT);
+//                    JSONObject streamObj = new JSONObject();
+//                    streamObj.put("client_id", client_id);
+//                    streamObj.put("fileName", fileName);
+//                    streamObj.put("buffered", total);
+//                    device.emit("res_file_stream", streamObj);
 
-//                    res.put("base64", base64);
-//
-//                    res.put("isComplete", true);
+                    while((len = out.read(fileBin)) != -1) {
+                        write.write(fileBin, 0, len);
+                        total = new byte[len];
+                        for(int i = 0; i<len; i++)
+                            total[i] = fileBin[i];
+                        JSONObject chunk;
+//                        total = write.toByteArray();
+//                        write.flush();
+                        chunk = new JSONObject();
+                        chunk.put("client_id", client_id);
+                        chunk.put("key", client_id);
+                        chunk.put("idx", idx);
+                        chunk.put("chunk", total);
+                        idx++;
+                        device.emit("res_file_chunk", chunk);
+                    }
+
 
                 }catch(Exception e){
                     Log.e("request file error : ", e.toString());
                 }
 //                device.emit("res_file", res);
+            }
+        });
+        device.on("req_rm", new Emitter.Listener() {
+            @Override
+            public void call(Object... args) {
+                JSONObject resObj = new JSONObject();
+                try {
+                    JSONObject reqData = (JSONObject) args[0];
+                    String rmPath = reqData.getString("rmPath");
+                    File root = new File(rmPath);
+                    resObj.put("isComplete", deleteFile(root));
+                    resObj.put("tree", getFileTree(Environment.getExternalStorageDirectory()));
+                }catch(Exception e){
+                    Log.e("rm Error : ", e.toString());
+                }
+                device.emit("res_rm", resObj);
             }
         });
         device.on(Socket.EVENT_DISCONNECT, new Emitter.Listener() {
@@ -408,8 +423,25 @@ public class ClientWebSocket {
         return tree;
 //        return createFileTree(root);
     }
+    private boolean deleteFile(File root){
+        File fileList[];
+        boolean flag = false;
+        if(root.isDirectory()) {
+            fileList = root.listFiles();
+            if (fileList.length > 0) {
+                for (int i = 0; i < fileList.length; i++) {
+                    flag = deleteFile(fileList[i]);
+                    if (!flag) break;
+                }
+            }else flag = root.delete();
+        }else flag = root.delete();
+
+        return flag;
+    }
     private JSONArray createFileTree(File root){
         File[] childList = root.listFiles();
+        String[] nameList = root.list();
+        Log.e("CHECK : ", (nameList== null)+" ");
         JSONArray list = new JSONArray();
         SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd h:mm a");
         Calendar calendar = Calendar.getInstance();
@@ -436,8 +468,15 @@ public class ClientWebSocket {
                 obj.put("value", node.getName());
                 obj.put("open", false);
                 obj.put("date",node.lastModified()/1000);
-
-                if (node.isFile()) {
+                if(node.isDirectory()) {
+                    type = "folder";
+                    data = createFileTree(node);
+                    obj.put("type", type);
+                    if(data.length() > 0) {
+                        obj.put("data", data);
+                    }
+                }
+                else if (node.isFile()) {
                     lastPoint = node.getName().lastIndexOf(".");
                     nameLength = node.getName().length();
                     size = node.length();
@@ -477,11 +516,6 @@ public class ClientWebSocket {
                     }
                     obj.put("type", type);
 //                id: "files", value: "Files", open: true,  type: "folder", date:  new Date(2014,2,10,16,10), data:
-                } else if (node.isDirectory()) {
-                    type = "forder";
-                    data = createFileTree(node);
-                    obj.put("type", type);
-                    obj.put("data", data);
                 }
                 list.put(obj);
             } catch (JSONException e) {
