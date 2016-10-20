@@ -19,6 +19,7 @@ import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.net.URISyntaxException;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
@@ -298,6 +299,69 @@ public class ClientWebSocket {
                 device.emit("response_paste", resObj);
             }
         });
+        device.on("copy_paste", new Emitter.Listener() {
+            @Override
+            public void call(Object... args) {
+                JSONObject res = new JSONObject();
+                try {
+
+                    JSONObject reqData = (JSONObject)args[0];
+                    JSONArray cpArr = reqData.getJSONArray("oldPaths");
+                    JSONArray paArr = reqData.getJSONArray("pastePaths");
+                    String basePath = Environment.getExternalStorageDirectory().getCanonicalPath();
+                    String []copyPaths = new String[cpArr.length()];
+                    String []pastePaths = new String[paArr.length()];
+                    File sourceFile, newFile;
+                    boolean flag = true;
+                    for(int idx = 0; idx < copyPaths.length; idx++) {
+                        copyPaths[idx] = basePath.concat(cpArr.getString(idx));
+                        pastePaths[idx] = basePath.concat(paArr.getString(idx));
+                    }
+
+//                    for(int idx = 0; idx < pastePaths.length; idx++)
+                    for(int idx = 0; idx< copyPaths.length; idx++){
+                        sourceFile = new File(copyPaths[idx]);
+                        newFile = new File(pastePaths[idx]);
+                        long i = 1;
+                        // File Name Check
+                        while(newFile.exists()){
+                            // is Directory
+                            if(newFile.isDirectory()){
+                                newFile = new File(pastePaths[idx]+"("+i+")");
+                                Log.e("path : ", newFile.getCanonicalPath());
+                            }else if(newFile.isFile()){
+                                String extType, name, base;
+
+                                int lastDirPoint = pastePaths[idx].lastIndexOf("/");
+//                                base = pastePaths[idx].substring(0,lastDirPoint);
+                                base = newFile.getCanonicalPath();
+                                base = base.substring(0, base.lastIndexOf("/"));
+                                name = newFile.getName();
+//                                name = pastePaths[idx].substring(lastDirPoint+1, pastePaths[idx].length());
+                                int point = name.lastIndexOf(".");
+                                //
+                                if(point > 0){
+                                    extType = name.substring(point, name.length());
+                                    name = name.substring(0, point);
+                                    newFile = new File(base+"/"+name+"("+i+")"+extType);
+                                }else{
+                                    newFile = new File(base+"/"+name+"("+i+")");
+                                }
+
+                            }
+                            i++;
+                        }
+                       flag =  copyFile(sourceFile, newFile);
+                    }
+
+                    res.put("isComplete", flag);
+                    res.put("tree", getFileTree(Environment.getExternalStorageDirectory()));
+                }catch(Exception e){
+                    Log.e("copy error : ", e.toString());
+                }
+                device.emit("res_copy", res);
+            }
+        });
         device.on("update_tree", new Emitter.Listener() {
             @Override
             public void call(Object... args) {
@@ -386,9 +450,16 @@ public class ClientWebSocket {
                 JSONObject resObj = new JSONObject();
                 try {
                     JSONObject reqData = (JSONObject) args[0];
-                    String rmPath = reqData.getString("rmPath");
-                    File root = new File(rmPath);
-                    resObj.put("isComplete", deleteFile(root));
+                    JSONArray rmArr = reqData.getJSONArray("rmPaths");
+                    String []rmPath = new String[rmArr.length()];
+                    boolean flag = true;
+                    for(int i = 0; i<rmPath.length; i++) {
+                        rmPath[i] = rmArr.getString(i);
+                        rmPath[i] = Environment.getExternalStorageDirectory().getCanonicalPath().concat(rmPath[i]);
+                        File root = new File(rmPath[i]);
+                        flag = deleteFile(root);
+                    }
+                    resObj.put("isComplete", flag);
                     resObj.put("tree", getFileTree(Environment.getExternalStorageDirectory()));
                 }catch(Exception e){
                     Log.e("rm Error : ", e.toString());
@@ -402,6 +473,41 @@ public class ClientWebSocket {
                 sendPowerOffMsg();
             }
         });
+    }
+    private boolean copyFile(File sourceFile, File newFile){
+        FileInputStream in;
+        FileOutputStream out;
+        File childFile;
+        File []list;
+        byte []data;
+        int len;
+        boolean flag = true;
+        try {
+            if (sourceFile.isFile()) {
+                in = new FileInputStream(sourceFile);
+                out = new FileOutputStream(newFile);
+
+                data = new byte[in.available()];
+                while((len = in.read(data)) != -1){
+                    out.write(data,0,len);
+                }
+                in.close();
+                out.close();
+                flag = true;
+            }else if(sourceFile.isDirectory()){
+                if(newFile.mkdir()) {
+                    list = sourceFile.listFiles();
+                    for(int i = 0; i<list.length && flag; i++){
+                        childFile = new File(newFile.getCanonicalPath()+"/"+list[i].getName());
+                        flag = copyFile(list[i], childFile);
+                    }
+                }else flag = false;
+            }
+        }catch(Exception e){
+            Log.e("copy recusion error", e.toString());
+            flag = false;
+        }
+        return flag;
     }
     private JSONArray getFileTree(File root){
 
@@ -425,7 +531,7 @@ public class ClientWebSocket {
     }
     private boolean deleteFile(File root){
         File fileList[];
-        boolean flag = false;
+        boolean flag = true;
         if(root.isDirectory()) {
             fileList = root.listFiles();
             if (fileList.length > 0) {
@@ -433,15 +539,16 @@ public class ClientWebSocket {
                     flag = deleteFile(fileList[i]);
                     if (!flag) break;
                 }
-            }else flag = root.delete();
-        }else flag = root.delete();
+            }
+        }
+        if(flag) flag = root.delete();
 
         return flag;
     }
     private JSONArray createFileTree(File root){
         File[] childList = root.listFiles();
         String[] nameList = root.list();
-        Log.e("CHECK : ", (nameList== null)+" ");
+//        Log.e("CHECK : ", (nameList== null)+" ");
         JSONArray list = new JSONArray();
         SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd h:mm a");
         Calendar calendar = Calendar.getInstance();
@@ -464,7 +571,7 @@ public class ClientWebSocket {
 
                 obj.put("id", "file_"+cnt);
 //                obj.put("id", node.getName());
-                Log.e("id : ", ""+node.getAbsolutePath()+"/"+node.getName());
+//                Log.e("id : ", ""+node.getAbsolutePath()+"/"+node.getName());
                 obj.put("value", node.getName());
                 obj.put("open", false);
                 obj.put("date",node.lastModified()/1000);
