@@ -99,6 +99,7 @@ public class ClientWebSocket {
                     device.on(userId + device_serial, new Emitter.Listener() {
                         @Override
                         public void call(Object... args) {
+                            Log.e("device connect request!!!", "122-+");
                             device.emit("ack_connect_device", args[0]);
                         }
                     });
@@ -118,7 +119,13 @@ public class ClientWebSocket {
         }
     }
 
-
+    public void logout(){
+        device.emit("logout_FileServer", new JSONObject());
+    }
+    public void powerOff(){
+        logout();
+        device.disconnect();
+    }
     // Send Power On Message to Web Browser Method
     private void sendPowerOnMsg(){
         JSONObject res = new JSONObject();
@@ -421,11 +428,12 @@ public class ClientWebSocket {
 //                    device.emit("res_file_stream", streamObj);
 
                     while((len = out.read(fileBin)) != -1) {
-                        write.write(fileBin, 0, len);
+//                        write.write(fileBin, 0, len);
                         total = new byte[len];
                         for(int i = 0; i<len; i++)
                             total[i] = fileBin[i];
                         JSONObject chunk;
+
 //                        total = write.toByteArray();
 //                        write.flush();
                         chunk = new JSONObject();
@@ -435,6 +443,7 @@ public class ClientWebSocket {
                         chunk.put("chunk", total);
                         idx++;
                         device.emit("res_file_chunk", chunk);
+
                     }
 
 
@@ -465,6 +474,40 @@ public class ClientWebSocket {
                     Log.e("rm Error : ", e.toString());
                 }
                 device.emit("res_rm", resObj);
+            }
+        });
+        device.on("upload", new Emitter.Listener() {
+            @Override
+            public void call(Object... args) {
+                JSONObject data = (JSONObject)args[0];
+                JSONObject resData = new JSONObject();
+
+                try {
+
+                    String fileName = data.getString("fileName");
+                    String path = data.getString("fileDest");
+                    String basePath = Environment.getExternalStorageDirectory().getCanonicalPath();
+                    ByteArrayOutputStream byteArr = new ByteArrayOutputStream();
+                    JSONArray buffer = data.getJSONArray("buffer");
+
+                    File uploadFile = new File(basePath+path+fileName);
+
+                    if(!uploadFile.exists()) uploadFile.createNewFile();
+
+                    FileOutputStream write = new FileOutputStream(uploadFile);
+
+                    for(int i = 0, len = buffer.length(); i<len; i++){
+                        byteArr.write(buffer.getInt(i));
+                    }
+                    byte binData[] = byteArr.toByteArray();
+                    write.write(binData);
+                    write.close();
+                    resData.put("isComplete", true);
+                    resData.put("tree", getFileTree(Environment.getExternalStorageDirectory()));
+                }catch(Exception e){
+                    Log.e("UploadError!", e.toString());
+                }
+                device.emit("res_upload", resData);
             }
         });
         device.on(Socket.EVENT_DISCONNECT, new Emitter.Listener() {
