@@ -36,7 +36,7 @@ public class Splash extends Activity {
 //        if(userPwd != null) Log.e("userPASS : ", userPwd);
 //        else                Log.e("userPASS : ", "NULL");
 
-        device.connect(Splash.this, "http://www.devkts.kro.kr:9900", userId, userPwd);
+        device.connect(Splash.this, "http://210.118.69.43:9900", userId, userPwd);
 //        new Handler().postDelayed(new Runnable() {
 //            @Override
 //            public void run() {

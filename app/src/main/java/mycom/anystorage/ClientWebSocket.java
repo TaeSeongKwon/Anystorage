@@ -16,6 +16,7 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
@@ -24,6 +25,9 @@ import java.net.URISyntaxException;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.HashMap;
+
+import static android.R.attr.y;
 
 /**
  * Created by KTS on 2016-09-26.
@@ -43,6 +47,12 @@ public class ClientWebSocket {
     private boolean flag = true;
     private boolean device_ack = true;
     private long cnt;
+
+    private File uploadFile;
+    private int totalChunk;
+    //private ByteArrayInputStream uploadByte;
+    private HashMap<Integer, byte[]> uploadChunk;
+
     public boolean isConnect(){ return device.connected(); }
     public boolean connect(Activity activity, String url, String userId, String userPwd){
         this.activity = activity;
@@ -51,6 +61,8 @@ public class ClientWebSocket {
 
         try{
             device = IO.socket(url);
+            IO.Options k = new IO.Options();
+
             device.connect();
             init();
             new AutoLogin().start();
@@ -476,40 +488,111 @@ public class ClientWebSocket {
                 device.emit("res_rm", resObj);
             }
         });
-        device.on("upload", new Emitter.Listener() {
+        device.on("uploadFileInfo", new Emitter.Listener() {
+            @Override
+            public void call(Object... args) {
+                Log.e("upload Info ", "");
+                JSONObject data = (JSONObject)args[0];
+                JSONObject resData = new JSONObject();
+                try{
+                    String fileName = data.getString("fileName");
+                    String path = data.getString("fileDest");
+                    String basePath = Environment.getExternalStorageDirectory().getCanonicalPath();
+                    totalChunk = data.getInt("totalChunk");
+
+                    uploadChunk = null;
+                    uploadChunk = new HashMap<Integer, byte[]>();
+                    uploadFile = new File(basePath+path+fileName);
+                    if(!uploadFile.exists()) uploadFile.createNewFile();
+                    Log.e("totalChunk : ", totalChunk+" ");
+                    Log.e("file Name : ", uploadFile.getName());
+                    System.gc();
+                }catch(Exception e){}
+//                device.emit("upload_info_ack", resData);
+            }
+
+        });
+        device.on("upload_chunk", new Emitter.Listener() {
             @Override
             public void call(Object... args) {
                 JSONObject data = (JSONObject)args[0];
                 JSONObject resData = new JSONObject();
-
-                try {
-
-                    String fileName = data.getString("fileName");
-                    String path = data.getString("fileDest");
-                    String basePath = Environment.getExternalStorageDirectory().getCanonicalPath();
-                    ByteArrayOutputStream byteArr = new ByteArrayOutputStream();
-                    JSONArray buffer = data.getJSONArray("buffer");
-
-                    File uploadFile = new File(basePath+path+fileName);
-
-                    if(!uploadFile.exists()) uploadFile.createNewFile();
-
-                    FileOutputStream write = new FileOutputStream(uploadFile);
+                try{
+//                    device.
+                   // Log.e("upload Chunk : ", data.toString());
+                    int idx = data.getInt("chunk_idx");
+                    JSONArray buffer = data.getJSONArray("chunkData");
+                    byte[] chunk = new byte[buffer.length()];
+                    resData.put("idx", idx);
 
                     for(int i = 0, len = buffer.length(); i<len; i++){
-                        byteArr.write(buffer.getInt(i));
+                        chunk[i] = (byte)buffer.getInt(i);
                     }
-                    byte binData[] = byteArr.toByteArray();
-                    write.write(binData);
-                    write.close();
-                    resData.put("isComplete", true);
-                    resData.put("tree", getFileTree(Environment.getExternalStorageDirectory()));
+
+                    buffer = null;
+                    Log.e("upload chunk : ", idx+" : ");
+                    uploadChunk.put(idx, chunk);
+                    chunk = null;
+                    if(uploadChunk.size() == totalChunk){
+                        FileOutputStream write = new FileOutputStream(uploadFile);
+                        for(int i = 0, len = uploadChunk.size(); i<len; i++){
+                            byte[] bufferArr = uploadChunk.get(i+1);
+                            write.write(bufferArr);
+                        }
+
+                        write.close();
+                        Log.e("uploadComplete", uploadFile.getName());
+                        resData.put("isComplete", true);
+                        resData.put("tree", getFileTree(Environment.getExternalStorageDirectory()));
+                        device.emit("res_upload", resData);
+                    }else{
+                        resData.put("isComplete", true);
+                        device.emit("res_upload_chunk", resData);
+                    }
                 }catch(Exception e){
-                    Log.e("UploadError!", e.toString());
+                    Log.e("Upload ChunkError : ", e.toString());
+                    device.emit("res_upload_chunk", resData);
                 }
-                device.emit("res_upload", resData);
+
             }
         });
+
+//        device.on("upload", new Emitter.Listener() {
+//            @Override
+//            public void call(Object... args) {
+//                JSONObject data = (JSONObject)args[0];
+//                JSONObject resData = new JSONObject();
+//
+//                try {
+//
+//                    String fileName = data.getString("fileName");
+//                    String path = data.getString("fileDest");
+//                    String basePath = Environment.getExternalStorageDirectory().getCanonicalPath();
+//                    ByteArrayOutputStream byteArr = new ByteArrayOutputStream();
+//                    JSONArray buffer = data.getJSONArray("buffer");
+//                    Log.e("Get Upload Buffer", " buffer");
+//                    File uploadFile = new File(basePath+path+fileName);
+//
+//                    if(!uploadFile.exists()) uploadFile.createNewFile();
+//
+//                    FileOutputStream write = new FileOutputStream(uploadFile);
+//                    Log.e("Create OuputStream", " ok");
+//                    for(int i = 0, len = buffer.length(); i<len; i++){
+//
+//                        byteArr.write(buffer.getInt(i));
+//                    }
+//                    Log.e("Complete Write buffer", " buffer");
+//                    byte binData[] = byteArr.toByteArray();
+//                    write.write(binData);
+//                    write.close();
+//                    resData.put("isComplete", true);
+//                    resData.put("tree", getFileTree(Environment.getExternalStorageDirectory()));
+//                }catch(Exception e){
+//                    Log.e("UploadError!", e.toString());
+//                }
+//                device.emit("res_upload", resData);
+//            }
+//        });
         device.on(Socket.EVENT_DISCONNECT, new Emitter.Listener() {
             @Override
             public void call(Object... args) {
